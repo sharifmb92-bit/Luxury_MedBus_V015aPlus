@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MED BASHA PRO</title>
+    <title>MED BASHA PRO v1.1.0</title>
     
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -59,7 +59,7 @@
     <div x-show="screen === 0" x-transition:enter="transition ease-out duration-300" x-cloak class="p-6 max-w-md mx-auto flex flex-col justify-center min-h-screen text-center">
         <div class="mb-8">
             <h1 class="text-4xl font-black italic tracking-tighter text-slate-300">MED BASHA PRO</h1>
-            <p class="text-xs text-blue-400 font-bold tracking-widest uppercase mt-2">Uso Personal & Sincronización</p>
+            <p class="text-xs text-blue-400 font-bold tracking-widest uppercase mt-2">Uso Personal & Sincronización <span class="text-[10px] text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded ml-1" x-text="version"></span></p>
         </div>
 
         <div class="glass-card p-6 rounded-3xl space-y-4 shadow-2xl border border-white/5">
@@ -86,7 +86,7 @@
                 <p class="text-[10px] text-slate-500 uppercase font-black" x-text="isAnon ? 'Modo Local Protegido' : 'Cuenta Personal Vinculada'"></p>
             </div>
             <div class="flex items-center gap-3">
-                <span class="firma-footer text-xs">medbasha</span>
+                <span class="firma-footer text-xs" x-text="'medbasha ' + version"></span>
                 <button @click="screen = 4; actualizarIconos()" class="p-2 bg-slate-800 rounded-full active:scale-90 transition-transform"><i data-lucide="settings"></i></button>
             </div>
         </header>
@@ -411,6 +411,7 @@
 
         function appBus() {
             return {
+                version: 'v1.1.0',
                 screen: 0, 
                 userId: 'local',
                 isAnon: false,
@@ -457,10 +458,8 @@
                                 this.userId = user.uid;
                                 this.isAnon = user.isAnonymous;
                                 this.screen = 1; 
-                                // CORRECCIÓN: Forzamos el inicio del sync y actualizamos la variable de control
                                 this.firebaseIniciado = false;
                                 this.iniciarSyncAutomatico();
-                                this.firebaseIniciado = true;
                             } else {
                                 this.screen = 0; 
                                 this.firebaseIniciado = false;
@@ -524,37 +523,28 @@
                     }
                 },
 
+                // ADAPTADO AL ESTILO DE DARKPAD: Eventos masivos globales en lugar de listeners individuales por nodo hijo
                 iniciarSyncAutomatico() {
                     if (!db || this.userId === 'local') return;
 
                     const nodoUser = db.ref('jornadas/' + this.userId);
 
-                    nodoUser.on('child_added', (snapshot) => {
-                        const item = snapshot.val();
-                        const existente = this.historial.find(h => h.id === item.id || h.fecha === item.fecha);
-                        if(!existente) {
-                            this.historial.push(item);
-                            this.historial.sort((a,b) => b.id - a.id);
+                    nodoUser.on('value', (snapshot) => {
+                        const turnosActualizados = [];
+                        
+                        snapshot.forEach((childSnapshot) => {
+                            turnosActualizados.push(childSnapshot.val());
+                        });
+
+                        if (turnosActualizados.length > 0) {
+                            this.historial = turnosActualizados.sort((a, b) => b.id - a.id);
                             this.saveHist();
                             this.calcularTotales();
                         }
-                    });
-
-                    nodoUser.on('child_changed', (snapshot) => {
-                        const updatedItem = snapshot.val();
-                        const idx = this.historial.findIndex(h => h.id === updatedItem.id || h.fecha === updatedItem.fecha);
-                        if(idx > -1) {
-                            this.historial[idx] = updatedItem;
-                            this.saveHist();
-                            this.calcularTotales();
-                        }
-                    });
-
-                    nodoUser.on('child_removed', (snapshot) => {
-                        const removedItem = snapshot.val();
-                        this.historial = this.historial.filter(h => h.id !== removedItem.id);
-                        this.saveHist();
-                        this.calcularTotales();
+                        this.firebaseIniciado = true;
+                    }, (error) => {
+                        console.error("Error en sincronización activa:", error);
+                        this.firebaseIniciado = false;
                     });
                 },
 
@@ -603,7 +593,6 @@
                     this.notificar("¡Borrador asegurado correctamente!", false);
                 },
 
-                // CORRECCIÓN: El botón "Volver" ahora te devuelve directamente al inicio sin condiciones ni alertas
                 comprobarSalidaPreventiva() {
                     this.volverAlInicio();
                 },
@@ -719,8 +708,8 @@
                     if (!this.manualCena) { this.form.cena = autoCena; }
                 },
 
+                // METODO ADAPTADO: Inyección fluida mediante .update() en el nodo raíz de jornadas directo
                 guardarJornada() {
-                    // CORRECCIÓN: El control estricto del BUS se activa única y exclusivamente al hacer clic aquí
                     if(!this.form.bus1) return this.notificar("⚠️ Falta el número de BUS", true);
                     if(this.form.hS1 && !this.form.hE1) return this.notificar("⚠️ Hora de fin sin inicio", true);
                     if(this.form.esPartida && this.form.hS2 && !this.form.hE2) return this.notificar("⚠️ Tramo 2: Fin sin inicio", true);
@@ -740,7 +729,7 @@
                     };
                     
                     if (db && this.userId !== 'local') {
-                        db.ref('jornadas/' + this.userId + '/' + reg.id).set(reg)
+                        db.ref('jornadas/' + this.userId + '/' + reg.id).update(reg)
                             .then(() => {
                                 this.notificar("¡Sincronizado en tu Nube Privada!");
                             })
